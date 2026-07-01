@@ -1,201 +1,198 @@
-const CACHE_NAME = 'has-field-v3';
-const urlsToCache = [
-  '/',
-  '/index.html',
-  '/manifest.json',
-  'https://cdn.jsdelivr.net/npm/appwrite@13.0.0',
-  'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js',
-  'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css',
-  'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap',
-  'https://fra.cloud.appwrite.io/v1/storage/buckets/6a426a570026eb00d2a3/files/6a450f89002c34c96ce0/view?project=6a42691c0006e65e22b2&mode=admin'
-];
-
-// Install Service Worker
-self.addEventListener('install', event => {
-  console.log('[SW] Installing...');
-  event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then(cache => {
-        console.log('[SW] Caching app shell');
-        return cache.addAll(urlsToCache);
-      })
-      .catch(err => {
-        console.log('[SW] Cache failed:', err);
-      })
-  );
-  self.skipWaiting();
-});
-
-// Activate Service Worker
-self.addEventListener('activate', event => {
-  console.log('[SW] Activating...');
-  event.waitUntil(
-    caches.keys().then(cacheNames => {
-      return Promise.all(
-        cacheNames.map(cacheName => {
-          if (cacheName !== CACHE_NAME) {
-            console.log('[SW] Deleting old cache:', cacheName);
-            return caches.delete(cacheName);
-          }
-        })
-      );
-    })
-  );
-  self.clients.claim();
-});
-
-// Fetch Strategy: Cache First, then Network
-self.addEventListener('fetch', event => {
-  // Skip Appwrite API calls (don't cache them)
-  if (event.request.url.includes('appwrite.io') && !event.request.url.includes('/files/')) {
-    return;
-  }
-
-  event.respondWith(
-    caches.match(event.request)
-      .then(cachedResponse => {
-        // Return cached response if available
-        if (cachedResponse) {
-          return cachedResponse;
-        }
-
-        // Fetch from network
-        return fetch(event.request)
-          .then(response => {
-            // Check if valid response
-            if (!response || response.status !== 200 || response.type !== 'basic') {
-              return response;
-            }
-
-            // Clone and cache the response
-            const responseToCache = response.clone();
-            caches.open(CACHE_NAME)
-              .then(cache => {
-                cache.put(event.request, responseToCache);
-              });
-
-            return response;
-          })
-          .catch(() => {
-            // Return offline fallback for navigation requests
-            if (event.request.mode === 'navigate') {
-              return caches.match('/index.html');
+// ==================== SERVICE WORKER REGISTRATION ====================
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js')
+      .then(registration => {
+        console.log('✅ Service Worker registered successfully');
+        console.log('Scope:', registration.scope);
+        
+        // Check for updates
+        registration.addEventListener('updatefound', () => {
+          const newWorker = registration.installing;
+          console.log('🔄 Service Worker update found!');
+          
+          newWorker.addEventListener('statechange', () => {
+            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+              console.log('🆕 New content available! Please refresh.');
+              // Optional: Show update notification
+              showUpdateNotification();
             }
           });
+        });
       })
-  );
-});
+      .catch(error => {
+        console.log('❌ Service Worker registration failed:', error);
+      });
+  });
+}
 
-// Push Notification
-self.addEventListener('push', event => {
-  console.log('[SW] Push received');
-  
-  let data = {};
-  try {
-    data = event.data?.json() || {};
-  } catch(e) {
-    data = { title: 'HAS Field System', body: event.data?.text() || 'New notification' };
-  }
-
-  const options = {
-    body: data.body || 'You have a new notification',
-    icon: 'https://fra.cloud.appwrite.io/v1/storage/buckets/6a426a570026eb00d2a3/files/6a450f89002c34c96ce0/view?project=6a42691c0006e65e22b2&mode=admin',
-    badge: 'https://fra.cloud.appwrite.io/v1/storage/buckets/6a426a570026eb00d2a3/files/6a450f89002c34c96ce0/view?project=6a42691c0006e65e22b2&mode=admin',
-    vibrate: [100, 50, 100],
-    data: {
-      url: data.url || '/'
-    },
-    actions: [
-      {
-        action: 'open',
-        title: 'Open App'
-      }
-    ]
+// ==================== UPDATE NOTIFICATION ====================
+function showUpdateNotification() {
+  const updateBanner = document.createElement('div');
+  updateBanner.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    background: #1a73e8;
+    color: white;
+    padding: 12px;
+    text-align: center;
+    z-index: 10001;
+    font-size: 0.9rem;
+    cursor: pointer;
+  `;
+  updateBanner.innerHTML = '🔄 New version available! <strong>Click to refresh</strong>';
+  updateBanner.onclick = () => {
+    window.location.reload();
   };
+  document.body.appendChild(updateBanner);
+}
 
-  event.waitUntil(
-    self.registration.showNotification(
-      data.title || 'HAS Field System',
-      options
-    )
-  );
-});
+// ==================== PWA INSTALL PROMPT ====================
+let deferredPrompt;
+let installBannerShown = false;
 
-// Notification Click
-self.addEventListener('notificationclick', event => {
-  console.log('[SW] Notification clicked');
-  event.notification.close();
+// Create install banner
+const installBanner = document.createElement('div');
+installBanner.id = 'installBanner';
+installBanner.style.cssText = `
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: #ffffff;
+  padding: 14px 16px;
+  box-shadow: 0 -4px 20px rgba(0,0,0,0.15);
+  z-index: 10000;
+  display: none;
+  text-align: center;
+  border-radius: 20px 20px 0 0;
+  animation: slideUp 0.3s ease;
+`;
 
-  const urlToOpen = event.notification.data?.url || '/';
+installBanner.innerHTML = `
+  <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;max-width:500px;margin:0 auto;flex-wrap:wrap;">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <img src="https://fra.cloud.appwrite.io/v1/storage/buckets/6a426a570026eb00d2a3/files/6a450f89002c34c96ce0/view?project=6a42691c0006e65e22b2&mode=admin" 
+           style="width:48px;height:48px;border-radius:12px;" 
+           alt="HAS" 
+           onerror="this.style.display='none'">
+      <div style="text-align:left;">
+        <strong style="font-size:0.9rem;color:#1c1b1f;">HAS Field System</strong>
+        <p style="font-size:0.75rem;color:#666;margin:0;">Install for quick access</p>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <button id="installBtn" style="background:#1a73e8;color:white;border:none;padding:10px 20px;border-radius:20px;font-weight:600;cursor:pointer;font-size:0.85rem;">
+        <i class="fas fa-download"></i> Install
+      </button>
+      <button id="dismissBtn" style="background:transparent;border:none;color:#666;cursor:pointer;font-size:1.2rem;padding:5px;">
+        ✕
+      </button>
+    </div>
+  </div>
+`;
 
-  event.waitUntil(
-    clients.matchAll({ type: 'window' })
-      .then(windowClients => {
-        // Check if there is already a window open
-        for (const client of windowClients) {
-          if (client.url === urlToOpen && 'focus' in client) {
-            return client.focus();
-          }
-        }
-        // Open new window
-        if (clients.openWindow) {
-          return clients.openWindow(urlToOpen);
-        }
-      })
-  );
-});
+// Add animation style
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes slideUp {
+    from { transform: translateY(100%); }
+    to { transform: translateY(0); }
+  }
+`;
+document.head.appendChild(style);
+document.body.appendChild(installBanner);
 
-// Background Sync (for offline queue)
-self.addEventListener('sync', event => {
-  console.log('[SW] Background sync:', event.tag);
-  if (event.tag === 'sync-attendance') {
-    event.waitUntil(syncAttendance());
-  } else if (event.tag === 'sync-entries') {
-    event.waitUntil(syncEntries());
+// Listen for install prompt
+window.addEventListener('beforeinstallprompt', (e) => {
+  console.log('📲 Install prompt available');
+  e.preventDefault();
+  deferredPrompt = e;
+  
+  if (!installBannerShown) {
+    installBanner.style.display = 'block';
+    installBannerShown = true;
   }
 });
 
-// Sync attendance records
-async function syncAttendance() {
-  try {
-    const queue = await getOfflineQueue('attendance');
-    for (const record of queue) {
-      // Send to server
-      await fetch('/api/sync/attendance', {
-        method: 'POST',
-        body: JSON.stringify(record)
+// Handle install button click
+document.addEventListener('click', (e) => {
+  if (e.target.id === 'installBtn' || e.target.closest('#installBtn')) {
+    installBanner.style.display = 'none';
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      deferredPrompt.userChoice.then((choiceResult) => {
+        if (choiceResult.outcome === 'accepted') {
+          console.log('✅ User accepted install');
+        } else {
+          console.log('❌ User dismissed install');
+        }
+        deferredPrompt = null;
       });
     }
-    // Clear queue
-    await clearOfflineQueue('attendance');
-  } catch(e) {
-    console.log('[SW] Sync attendance failed:', e);
   }
-}
-
-// Sync logbook entries
-async function syncEntries() {
-  try {
-    const queue = await getOfflineQueue('entries');
-    for (const entry of queue) {
-      await fetch('/api/sync/entries', {
-        method: 'POST',
-        body: JSON.stringify(entry)
-      });
-    }
-    await clearOfflineQueue('entries');
-  } catch(e) {
-    console.log('[SW] Sync entries failed:', e);
+  
+  if (e.target.id === 'dismissBtn' || e.target.closest('#dismissBtn')) {
+    installBanner.style.display = 'none';
   }
+});
+
+// Hide banner when app is installed
+window.addEventListener('appinstalled', () => {
+  console.log('🎉 App installed successfully!');
+  installBanner.style.display = 'none';
+  deferredPrompt = null;
+});
+
+// ==================== OFFLINE DETECTION ====================
+window.addEventListener('online', () => {
+  console.log('🌐 Back online');
+  showToast('Back online! Syncing data...');
+});
+
+window.addEventListener('offline', () => {
+  console.log('📡 Offline mode');
+  showToast('You are offline. Changes will sync when connected.');
+});
+
+function showToast(message) {
+  const toast = document.createElement('div');
+  toast.style.cssText = `
+    position: fixed;
+    bottom: 80px;
+    right: 16px;
+    padding: 10px 18px;
+    background: #1a73e8;
+    color: white;
+    border-radius: 22px;
+    z-index: 10001;
+    font-size: 0.85rem;
+    animation: slideUp 0.3s ease;
+  `;
+  toast.textContent = message;
+  document.body.appendChild(toast);
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transition = 'opacity 0.3s';
+    setTimeout(() => toast.remove(), 300);
+  }, 3000);
 }
 
-// Helper: Get offline queue
-async function getOfflineQueue(type) {
-  // In a real app, this would use IndexedDB
-  return [];
+// ==================== BACKGROUND SYNC REGISTRATION ====================
+if ('serviceWorker' in navigator && 'SyncManager' in window) {
+  navigator.serviceWorker.ready.then(registration => {
+    // Register sync for attendance
+    registration.sync.register('sync-attendance')
+      .then(() => console.log('✅ Attendance sync registered'))
+      .catch(err => console.log('Sync registration failed:', err));
+    
+    // Register sync for entries
+    registration.sync.register('sync-entries')
+      .then(() => console.log('✅ Entries sync registered'))
+      .catch(err => console.log('Sync registration failed:', err));
+  });
 }
 
-// Helper: Clear offline queue
-async function clearOfflineQueue(type) {
-  // Clear queue after successful sync
-}
+console.log('🚀 HAS Field System - PWA Ready');
