@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <script>
+    // Save the attempted URL path
+    var path = window.location.pathname;
+    var search = window.location.search;
+    if (path !== '/' && path !== '/index.html') {
+      sessionStorage.setItem('spa-redirect', path + search);
+    }
+    // Redirect to main app
+    window.location.replace('/');
+  </script>
+</head>
+<body>
+  <p>Loading HAS Field System...</p>
+</body>
+</html>
