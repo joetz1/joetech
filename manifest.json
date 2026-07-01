@@ -12,10 +12,19 @@
   "lang": "en",
   "icons": [
     {
-      "src": "https://fra.cloud.appwrite.io/v1/storage/buckets/6a426a570026eb00d2a3/files/6a44ddc00037a7b69023/view?project=6a42691c0006e65e22b2&mode=admin",
+      "src": "https://fra.cloud.appwrite.io/v1/storage/buckets/6a426a570026eb00d2a3/files/6a450f89002c34c96ce0/view?project=6a42691c0006e65e22b2&mode=admin",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "https://fra.cloud.appwrite.io/v1/storage/buckets/6a426a570026eb00d2a3/files/6a450f89002c34c96ce0/view?project=6a42691c0006e65e22b2&mode=admin",
+      "sizes": "512x512",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "HAS Field System"
     }
   ]
 }
